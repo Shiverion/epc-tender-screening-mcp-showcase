@@ -1,0 +1,17 @@
+{
+  "company_name": "Your Company Name",
+  "business_lines": ["EPC", "piping", "mechanical", "electrical"],
+  "legal_documents": [
+    {
+      "name": "NIB",
+      "status": "available",
+      "evidence": "Reference to your evidence file"
+    }
+  ],
+  "certifications": [],
+  "kbli_registered": [],
+  "project_experience": [],
+  "hse_capabilities": [],
+  "financial_capabilities": [],
+  "known_gaps": []
+}

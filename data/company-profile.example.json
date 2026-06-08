@@ -1,0 +1,68 @@
+{
+  "company_name": "PT Example EPC Nusantara",
+  "business_lines": [
+    "EPC",
+    "piping",
+    "mechanical",
+    "electrical",
+    "civil construction",
+    "procurement",
+    "project management"
+  ],
+  "legal_documents": [
+    {
+      "name": "NIB",
+      "status": "available",
+      "evidence": "Example corporate registry folder"
+    },
+    {
+      "name": "NPWP",
+      "status": "available",
+      "evidence": "Example tax folder"
+    }
+  ],
+  "certifications": [
+    {
+      "name": "SBU Konstruksi",
+      "status": "needs_verification",
+      "evidence": "Verify classification against tender scope"
+    },
+    {
+      "name": "ISO 9001",
+      "status": "available",
+      "evidence": "Example QMS certificate"
+    },
+    {
+      "name": "SMK3",
+      "status": "available",
+      "evidence": "Example HSE system evidence"
+    }
+  ],
+  "kbli_registered": ["43211", "43221", "43291", "42912", "43905"],
+  "project_experience": [
+    {
+      "title": "Industrial piping installation project",
+      "scope": ["piping", "mechanical", "site supervision"],
+      "location": "Kalimantan",
+      "evidence": "Example historical proposal archive"
+    },
+    {
+      "title": "Electrical field wiring and panel support",
+      "scope": ["electrical", "commissioning"],
+      "location": "Balikpapan",
+      "evidence": "Example purchase order archive"
+    }
+  ],
+  "hse_capabilities": ["HSE plan", "JSA", "toolbox meeting", "permit to work"],
+  "financial_capabilities": [
+    {
+      "name": "bid bond",
+      "status": "needs_bank_confirmation",
+      "evidence": "Finance confirmation required per tender"
+    }
+  ],
+  "known_gaps": [
+    "Vendor support letters are project-specific.",
+    "Bank guarantee values must be confirmed per tender."
+  ]
+}

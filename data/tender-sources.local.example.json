@@ -1,0 +1,9 @@
+{
+  "sources": [
+    {
+      "name": "Example tender listing",
+      "url": "https://example.com/tenders",
+      "type": "html"
+    }
+  ]
+}

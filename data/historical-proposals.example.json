@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "id": "hist-001",
+      "title": "Piping Installation Proposal",
+      "source": "Example archive",
+      "content": "Past EPC proposal for piping fabrication, site supervision, testing, and commissioning in Kalimantan."
+    },
+    {
+      "id": "hist-002",
+      "title": "Electrical Support BOQ",
+      "source": "Example archive",
+      "content": "BOQ reference for electrical panel support, cable pulling, field wiring, and commissioning assistance."
+    },
+    {
+      "id": "hist-003",
+      "title": "Vendor Support Letter Checklist",
+      "source": "Example archive",
+      "content": "Checklist for vendor support letters, lead time confirmation, warranty statement, and material compliance."
+    }
+  ]
+}
