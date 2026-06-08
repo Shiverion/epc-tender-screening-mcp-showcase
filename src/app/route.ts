@@ -13,6 +13,7 @@ export function GET() {
       protected_resource: '/.well-known/oauth-protected-resource',
     },
     tools: [
+      'screen_tender',
       'connect_company_profile_text',
       'connect_current_tender_text',
       'connect_tender_source_urls',

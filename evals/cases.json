@@ -1,0 +1,27 @@
+[
+  {
+    "name": "good-fit-epc",
+    "companyProfilePath": "evals/fixtures/good-fit-company.md",
+    "tenderPath": "evals/fixtures/good-fit-tender.md",
+    "expectedRecommendation": "Management Review",
+    "maxRiskScore": 80,
+    "minFitScore": 55,
+    "requiredRedFlagSubstrings": ["Surat dukungan vendor"]
+  },
+  {
+    "name": "bad-fit-marine-transport",
+    "companyProfilePath": "evals/fixtures/bad-fit-company.md",
+    "tenderPath": "evals/fixtures/bad-fit-tender.md",
+    "expectedRecommendation": "No Bid",
+    "minRiskScore": 70,
+    "requiredRedFlagSubstrings": ["KBLI", "kapal"]
+  },
+  {
+    "name": "management-review-admin-heavy",
+    "companyProfilePath": "evals/fixtures/management-review-company.md",
+    "tenderPath": "evals/fixtures/management-review-tender.md",
+    "expectedRecommendation": "Review Further",
+    "minRiskScore": 35,
+    "requiredVerificationSubstrings": ["ISO", "Jaminan"]
+  }
+]

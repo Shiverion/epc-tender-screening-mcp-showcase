@@ -4,6 +4,7 @@ An MCP-only server for evidence-based EPC tender screening.
 
 This project lets MCP-compatible AI agents:
 
+- run a full `screen_tender` workflow,
 - extract tender requirements from uploaded tender text,
 - match requirements against a company profile,
 - generate compliance matrices,
@@ -21,6 +22,7 @@ Tender teams spend significant time reading long procurement documents, checking
 
 | Tool | Purpose |
 |---|---|
+| `screen_tender` | Run the full screening workflow end to end |
 | `connect_company_profile_text` | Save uploaded/extracted company profile text as local context |
 | `connect_current_tender_text` | Save uploaded/extracted tender text as current tender |
 | `connect_tender_source_urls` | Allowlist public tender source URLs for discovery |
@@ -51,6 +53,12 @@ The Streamable HTTP MCP endpoint is:
 
 ```text
 http://localhost:3000/api/mcp
+```
+
+The root URL returns JSON metadata only:
+
+```bash
+curl http://localhost:3000
 ```
 
 For local connector testing without auth:
@@ -117,10 +125,8 @@ Upload company profile and tender files to ChatGPT, then ask:
 
 ```text
 Extract text from the uploaded company profile and tender files.
-Call connect_company_profile_text with the company profile text.
-Call connect_current_tender_text with the tender text.
-Call get_data_status.
-Call generate_bid_no_bid_memo.
+Call screen_tender with tender_text and company_profile_text.
+Summarize the recommendation, red flags, missing documents, and next human actions.
 ```
 
 For one-shot analysis without saving:
@@ -182,6 +188,26 @@ Do not use this project to automatically submit tenders or make binding commerci
 ```bash
 npm run lint
 npm run build
+npm run eval
+```
+
+The eval suite runs through the real MCP stdio transport and checks tool exposure, safe failure behavior, screening outputs, and evidence traces.
+
+## Docs
+
+- [Architecture](docs/architecture.md)
+- [Demo transcript](docs/demo-transcript.md)
+- [Evals](docs/evals.md)
+
+## CI
+
+GitHub Actions runs:
+
+```text
+npm ci
+npm run lint
+npm run build
+npm run eval
 ```
 
 ## License

@@ -32,6 +32,7 @@ interface ComplianceRow extends Requirement {
   risk: RiskLevel;
   action: string;
   matchedEvidence: string;
+  evidence_trace: EvidenceTrace;
 }
 
 interface ProfileItem {
@@ -62,6 +63,13 @@ interface TenderSource {
   name: string;
   url: string;
   type?: 'html' | 'text' | 'rss' | 'pdf' | 'unknown';
+}
+
+interface EvidenceTrace {
+  claim: string;
+  evidence_source: 'tender_text' | 'company_profile' | 'historical_archive' | 'public_source' | 'inference';
+  evidence_quote: string;
+  confidence: 'high' | 'medium' | 'low';
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -328,12 +336,30 @@ function findProfileEvidence(requirement: Requirement, profile: CompanyProfile):
   return '';
 }
 
+function evidenceTrace(
+  requirement: Requirement,
+  matchedEvidence: string,
+  evidenceSource: EvidenceTrace['evidence_source'],
+  confidence: EvidenceTrace['confidence']
+): EvidenceTrace {
+  return {
+    claim: requirement.requirement,
+    evidence_source: evidenceSource,
+    evidence_quote: matchedEvidence || requirement.evidence,
+    confidence,
+  };
+}
+
 function evaluateRequirement(requirement: Requirement, profile: CompanyProfile): ComplianceRow {
   const req = normalize(requirement.requirement);
   const profileText = JSON.stringify(profile).toLowerCase();
   const matchedEvidence = findProfileEvidence(requirement, profile);
   const hasMatch = Boolean(matchedEvidence) || req.split(' ').some((word) => word.length > 4 && profileText.includes(word));
-  const requiredKbliCodes = Array.from(requirement.requirement.matchAll(/\b\d{5}\b/g)).map((match) => match[0]);
+  const mayContainKbliCodes =
+    /kbli|klbi|kbup/.test(req) || /\b\d{5}(?:,\s*\d{5})+\b/.test(requirement.requirement);
+  const requiredKbliCodes = mayContainKbliCodes
+    ? Array.from(requirement.requirement.matchAll(/\b\d{5}\b/g)).map((match) => match[0])
+    : [];
   const registeredKbli = new Set((profile.kbli_registered ?? []).map(String));
   const hasUnmatchedKbli = requiredKbliCodes.length > 0 && requiredKbliCodes.every((code) => !registeredKbli.has(code));
 
@@ -346,55 +372,73 @@ function evaluateRequirement(requirement: Requirement, profile: CompanyProfile):
       matchedEvidence: hasUnmatchedKbli
         ? `Required KBLI codes not found in profile: ${requiredKbliCodes.join(', ')}`
         : 'KBLI eligibility must be verified.',
+      evidence_trace: evidenceTrace(
+        requirement,
+        hasUnmatchedKbli
+          ? `Required KBLI codes not found in profile: ${requiredKbliCodes.join(', ')}`
+          : 'KBLI eligibility must be verified against official registration.',
+        hasUnmatchedKbli ? 'company_profile' : 'inference',
+        hasUnmatchedKbli ? 'high' : 'medium'
+      ),
     };
   }
 
   if (/kapal|crew kapal|transportir|angkutan bbm|bunker bbm/.test(req)) {
+    const evidence = matchedEvidence || 'No direct transport capability evidence found in company profile.';
     return {
       ...requirement,
       status: hasMatch ? 'needs_verification' : 'missing',
       risk: 'high',
       action: 'Confirm transport license, asset availability, crew certification, and operational permits.',
-      matchedEvidence: matchedEvidence || 'No direct transport capability evidence found in company profile.',
+      matchedEvidence: evidence,
+      evidence_trace: evidenceTrace(requirement, evidence, hasMatch ? 'company_profile' : 'inference', hasMatch ? 'medium' : 'high'),
     };
   }
 
   if (/vendor|surat dukungan/.test(req)) {
+    const evidence = 'Project-specific document required.';
     return {
       ...requirement,
       status: 'missing',
       risk: 'high',
       action: 'Request vendor support letter and lead time confirmation.',
-      matchedEvidence: 'Project-specific document required.',
+      matchedEvidence: evidence,
+      evidence_trace: evidenceTrace(requirement, evidence, 'inference', 'high'),
     };
   }
 
   if (/jaminan|bid bond|bank/.test(req)) {
+    const evidence = matchedEvidence || 'Finance confirmation required.';
     return {
       ...requirement,
       status: 'needs_verification',
       risk: 'medium',
       action: 'Ask finance to confirm guarantee amount and bank issuance timeline.',
-      matchedEvidence: matchedEvidence || 'Finance confirmation required.',
+      matchedEvidence: evidence,
+      evidence_trace: evidenceTrace(requirement, evidence, matchedEvidence ? 'company_profile' : 'inference', 'medium'),
     };
   }
 
   if (hasMatch) {
+    const evidence = matchedEvidence || 'Matched against company profile.';
     return {
       ...requirement,
       status: matchedEvidence.toLowerCase().includes('verify') || matchedEvidence.toLowerCase().includes('needs') ? 'needs_verification' : 'available',
       risk: 'low',
       action: 'Attach evidence and confirm validity date.',
-      matchedEvidence: matchedEvidence || 'Matched against company profile.',
+      matchedEvidence: evidence,
+      evidence_trace: evidenceTrace(requirement, evidence, 'company_profile', matchedEvidence ? 'high' : 'medium'),
     };
   }
 
+  const evidence = 'No direct evidence found in company profile.';
   return {
     ...requirement,
     status: 'partial',
     risk: 'medium',
     action: 'Assign owner to verify evidence or prepare missing document.',
-    matchedEvidence: 'No direct evidence found in company profile.',
+    matchedEvidence: evidence,
+    evidence_trace: evidenceTrace(requirement, evidence, 'inference', 'medium'),
   };
 }
 
@@ -514,11 +558,91 @@ async function searchHistorical(query: string, limit: number) {
     .slice(0, limit);
 }
 
+async function screenTender(
+  tenderText?: string,
+  companyProfileJson?: string,
+  companyProfileText?: string,
+  historicalSearchQuery?: string
+) {
+  const tender = await loadTender(tenderText);
+  const { profile, source } = await loadCompanyProfile(companyProfileJson, companyProfileText);
+  const requirements = extractTenderRequirements(tender.text);
+  const matrix = requirements.map((requirement) => evaluateRequirement(requirement, profile));
+  const summary = scoreCompliance(matrix);
+  const missing = matrix.filter((row) => row.status === 'missing');
+  const needsVerification = matrix.filter((row) => row.status === 'needs_verification');
+  const highRisk = matrix.filter((row) => row.risk === 'high');
+  const historicalResults = historicalSearchQuery ? await searchHistorical(historicalSearchQuery, 5) : [];
+
+  return {
+    tender_source: tender.source,
+    company_profile_source: source,
+    company_name: profile.company_name ?? 'Unknown company',
+    requirements,
+    summary,
+    compliance_matrix: matrix,
+    bid_no_bid_memo: {
+      title: 'Bid/No-Bid Advisory Memo',
+      recommendation: summary.recommendation,
+      fit_score: summary.fit_score,
+      risk_score: summary.risk_score,
+      rationale: [
+        `${summary.available} requirements are directly available in the company profile.`,
+        `${summary.needs_verification} requirements need verification before submission.`,
+        `${summary.missing} requirements appear missing or project-specific.`,
+        `${summary.high_risk} high-risk items require management attention.`,
+      ],
+      red_flags: highRisk.map((row) => ({
+        requirement: row.requirement,
+        action: row.action,
+        evidence: row.evidence,
+        evidence_trace: row.evidence_trace,
+      })),
+      missing_documents: missing.map((row) => row.requirement),
+      verification_items: needsVerification.map((row) => row.requirement),
+      next_actions: [
+        'Assign document owners for missing and verification items.',
+        'Confirm legal, certification, KBLI, and financial evidence.',
+        'Request vendor or asset support letters where required.',
+        'Send memo for human tender, finance, legal, and management review.',
+      ],
+      policy: 'Advisory only. Human review is required before bid submission.',
+    },
+    historical_context: {
+      query: historicalSearchQuery ?? null,
+      count: historicalResults.length,
+      results: historicalResults,
+      note: historicalSearchQuery
+        ? 'Historical context is grounding only. Do not invent prices, dates, or contractual claims.'
+        : 'No historical search query supplied.',
+    },
+    human_review_required: true,
+  };
+}
+
 export function createEpcTenderMcpServer() {
   const server = new McpServer({
     name: 'epc-tender-screening-mcp',
     version: '0.1.0',
   });
+
+  server.registerTool(
+    'screen_tender',
+    {
+      title: 'Screen Tender',
+      description: 'Run the full EPC tender screening workflow: extract requirements, match company profile, generate compliance matrix, and produce bid/no-bid memo.',
+      inputSchema: {
+        tender_text: z.string().optional(),
+        company_profile_json: z.string().optional(),
+        company_profile_text: z.string().optional(),
+        historical_search_query: z.string().optional(),
+      },
+    },
+    async ({ tender_text, company_profile_json, company_profile_text, historical_search_query }) => {
+      const result = await screenTender(tender_text, company_profile_json, company_profile_text, historical_search_query);
+      return textResult(result);
+    }
+  );
 
   server.registerTool(
     'connect_company_profile_text',
@@ -712,10 +836,15 @@ export function createEpcTenderMcpServer() {
       },
     },
     async ({ tender_text, company_profile_json, company_profile_text }) => {
-      const tender = await loadTender(tender_text);
-      const { profile, source } = await loadCompanyProfile(company_profile_json, company_profile_text);
-      const matrix = extractTenderRequirements(tender.text).map((requirement) => evaluateRequirement(requirement, profile));
-      return textResult({ company_name: profile.company_name ?? 'Unknown company', company_profile_source: source, tender_source: tender.source, summary: scoreCompliance(matrix), compliance_matrix: matrix, human_review_required: true });
+      const result = await screenTender(tender_text, company_profile_json, company_profile_text);
+      return textResult({
+        company_name: result.company_name,
+        company_profile_source: result.company_profile_source,
+        tender_source: result.tender_source,
+        summary: result.summary,
+        compliance_matrix: result.compliance_matrix,
+        human_review_required: true,
+      });
     }
   );
 
@@ -731,37 +860,12 @@ export function createEpcTenderMcpServer() {
       },
     },
     async ({ tender_text, company_profile_json, company_profile_text }) => {
-      const tender = await loadTender(tender_text);
-      const { profile, source } = await loadCompanyProfile(company_profile_json, company_profile_text);
-      const matrix = extractTenderRequirements(tender.text).map((requirement) => evaluateRequirement(requirement, profile));
-      const summary = scoreCompliance(matrix);
-      const missing = matrix.filter((row) => row.status === 'missing');
-      const needsVerification = matrix.filter((row) => row.status === 'needs_verification');
-      const highRisk = matrix.filter((row) => row.risk === 'high');
+      const result = await screenTender(tender_text, company_profile_json, company_profile_text);
       return textResult({
-        title: 'Bid/No-Bid Advisory Memo',
-        company_name: profile.company_name ?? 'Unknown company',
-        company_profile_source: source,
-        tender_source: tender.source,
-        recommendation: summary.recommendation,
-        fit_score: summary.fit_score,
-        risk_score: summary.risk_score,
-        rationale: [
-          `${summary.available} requirements are directly available in the company profile.`,
-          `${summary.needs_verification} requirements need verification before submission.`,
-          `${summary.missing} requirements appear missing or project-specific.`,
-          `${summary.high_risk} high-risk items require management attention.`,
-        ],
-        red_flags: highRisk.map((row) => ({ requirement: row.requirement, action: row.action, evidence: row.evidence })),
-        missing_documents: missing.map((row) => row.requirement),
-        verification_items: needsVerification.map((row) => row.requirement),
-        next_actions: [
-          'Assign document owners for missing and verification items.',
-          'Confirm legal, certification, KBLI, and financial evidence.',
-          'Request vendor or asset support letters where required.',
-          'Send memo for human tender, finance, legal, and management review.',
-        ],
-        policy: 'Advisory only. Human review is required before bid submission.',
+        ...result.bid_no_bid_memo,
+        company_name: result.company_name,
+        company_profile_source: result.company_profile_source,
+        tender_source: result.tender_source,
       });
     }
   );
