@@ -1,6 +1,6 @@
 # EPC Tender Screening MCP
 
-An MCP server and showcase UI for evidence-based EPC tender screening.
+An MCP-only server for evidence-based EPC tender screening.
 
 This project lets MCP-compatible AI agents:
 
@@ -11,7 +11,7 @@ This project lets MCP-compatible AI agents:
 - search explicit public tender source URLs,
 - search local historical proposal examples for grounding.
 
-The project is designed as a clean public showcase. It does not include private company documents, credentials, or production tender archives.
+The project is designed as a clean public MCP repository. It does not include private company documents, credentials, UI pages, or production tender archives.
 
 ## Why This Exists
 
@@ -44,6 +44,8 @@ Open:
 ```text
 http://localhost:3000
 ```
+
+The root URL returns JSON metadata only. There is no UI.
 
 The Streamable HTTP MCP endpoint is:
 
