@@ -103,7 +103,6 @@ Set:
 ```bash
 MCP_PUBLIC_BASE_URL=https://your-domain.example
 MCP_API_KEY=replace-this-token
-MCP_DEMO_ACCESS_TOKEN=replace-this-token
 ```
 
 Connector values:
@@ -118,6 +117,15 @@ Scope: mcp tender:read tender:screen
 ```
 
 For production, replace the demo OAuth shim with real OAuth and per-user authorization.
+
+Demo token auth is disabled by default in production. For temporary hosted demos only, set:
+
+```bash
+MCP_ALLOW_DEMO_AUTH=true
+MCP_DEMO_ACCESS_TOKEN=replace-this-demo-token
+```
+
+Do not use the default demo token for a public deployment.
 
 ## ChatGPT Upload Workflow
 

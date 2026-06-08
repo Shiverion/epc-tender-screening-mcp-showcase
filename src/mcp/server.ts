@@ -81,6 +81,8 @@ const localTenderPath = path.join(repoRoot, 'data/current-tender.local.md');
 const localProfilePath = path.join(repoRoot, 'data/company-profile.local.json');
 const localTenderSourcesPath = path.join(repoRoot, 'data/tender-sources.local.json');
 const allowExampleFallback = process.env.MCP_ALLOW_EXAMPLE_FALLBACK === 'true';
+const maxTextInputChars = 200_000;
+const maxFetchedSourceBytes = 1_000_000;
 
 function textResult(value: Record<string, unknown>) {
   return {
@@ -473,10 +475,26 @@ function scoreCompliance(rows: ComplianceRow[]) {
   };
 }
 
+function isBlockedHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === 'localhost' || host === '0.0.0.0' || host === '::1') return true;
+  if (host.endsWith('.local') || !host.includes('.')) return true;
+  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host)) return true;
+  const private172 = host.match(/^172\.(\d{1,2})\./);
+  if (private172) {
+    const secondOctet = Number(private172[1]);
+    if (secondOctet >= 16 && secondOctet <= 31) return true;
+  }
+  if (host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:')) return true;
+  return false;
+}
+
 function safeUrl(value: string): URL | null {
   try {
     const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) ? url : null;
+    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    if (isBlockedHostname(url.hostname)) return null;
+    return url;
   } catch {
     return null;
   }
@@ -503,7 +521,7 @@ async function readTenderSources(): Promise<TenderSource[]> {
 
 async function fetchSourceText(source: TenderSource) {
   const url = safeUrl(source.url);
-  if (!url) return { text: '', warning: 'Invalid URL. Only http/https sources are supported.' };
+  if (!url) return { text: '', warning: 'Invalid or blocked URL. Only public http/https sources are supported.' };
   const response = await fetch(url, {
     headers: {
       'user-agent': 'EPC Tender Screening MCP Showcase/0.1',
@@ -516,8 +534,37 @@ async function fetchSourceText(source: TenderSource) {
   if (contentType.includes('application/pdf') || source.type === 'pdf') {
     return { text: '', warning: 'PDF source found. Upload or connect extracted tender text before screening.' };
   }
-  const raw = await response.text();
+  const raw = await readLimitedResponseText(response, maxFetchedSourceBytes);
   return { text: contentType.includes('html') || raw.includes('<html') ? stripHtml(raw) : raw };
+}
+
+async function readLimitedResponseText(response: Response, maxBytes: number): Promise<string> {
+  if (!response.body) return response.text();
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      reader.cancel().catch(() => undefined);
+      throw new Error(`Source response exceeds ${maxBytes} bytes`);
+    }
+    chunks.push(value);
+  }
+
+  const merged = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return new TextDecoder().decode(merged);
 }
 
 function searchNeedles(query: string, location?: string, sector?: string, kbliCodes?: string[]) {
@@ -632,10 +679,10 @@ export function createEpcTenderMcpServer() {
       title: 'Screen Tender',
       description: 'Run the full EPC tender screening workflow: extract requirements, match company profile, generate compliance matrix, and produce bid/no-bid memo.',
       inputSchema: {
-        tender_text: z.string().optional(),
-        company_profile_json: z.string().optional(),
-        company_profile_text: z.string().optional(),
-        historical_search_query: z.string().optional(),
+        tender_text: z.string().max(maxTextInputChars).optional(),
+        company_profile_json: z.string().max(maxTextInputChars).optional(),
+        company_profile_text: z.string().max(maxTextInputChars).optional(),
+        historical_search_query: z.string().max(500).optional(),
       },
     },
     async ({ tender_text, company_profile_json, company_profile_text, historical_search_query }) => {
@@ -650,8 +697,8 @@ export function createEpcTenderMcpServer() {
       title: 'Connect Company Profile Text',
       description: 'Persist uploaded/extracted company profile text as the local company profile used by later screening calls.',
       inputSchema: {
-        company_profile_text: z.string().min(50),
-        source_name: z.string().optional(),
+        company_profile_text: z.string().min(50).max(maxTextInputChars),
+        source_name: z.string().max(200).optional(),
       },
     },
     async ({ company_profile_text, source_name }) => {
@@ -676,8 +723,8 @@ export function createEpcTenderMcpServer() {
       title: 'Connect Current Tender Text',
       description: 'Persist uploaded/extracted tender text as the current local tender used by later screening calls.',
       inputSchema: {
-        tender_text: z.string().min(50),
-        source_name: z.string().optional(),
+        tender_text: z.string().min(50).max(maxTextInputChars),
+        source_name: z.string().max(200).optional(),
       },
     },
     async ({ tender_text, source_name }) => {
@@ -698,7 +745,7 @@ export function createEpcTenderMcpServer() {
       title: 'Connect Tender Source URLs',
       description: 'Persist allowlisted public tender source URLs for later opportunity discovery.',
       inputSchema: {
-        sources: z.array(z.object({ name: z.string().min(2), url: z.string().url(), type: z.enum(['html', 'text', 'rss', 'pdf', 'unknown']).optional() })).min(1).max(20),
+        sources: z.array(z.object({ name: z.string().min(2).max(100), url: z.string().url(), type: z.enum(['html', 'text', 'rss', 'pdf', 'unknown']).optional() })).min(1).max(10),
         replace_existing: z.boolean().default(false),
       },
     },
@@ -717,11 +764,11 @@ export function createEpcTenderMcpServer() {
       title: 'Search Public Tender Sources',
       description: 'Search allowlisted public tender source pages or URLs supplied in the request. This does not crawl the whole internet.',
       inputSchema: {
-        query: z.string().min(2),
-        kbli_codes: z.array(z.string()).optional(),
-        location: z.string().optional(),
-        sector: z.string().optional(),
-        source_urls: z.array(z.string().url()).optional(),
+        query: z.string().min(2).max(200),
+        kbli_codes: z.array(z.string().max(20)).max(20).optional(),
+        location: z.string().max(100).optional(),
+        sector: z.string().max(100).optional(),
+        source_urls: z.array(z.string().url()).max(10).optional(),
         limit: z.number().int().min(1).max(20).default(10),
       },
     },
@@ -796,7 +843,7 @@ export function createEpcTenderMcpServer() {
     {
       title: 'Extract Tender Requirements',
       description: 'Extract structured EPC tender requirements from tender text. Uses current local tender file if configured.',
-      inputSchema: { tender_text: z.string().optional() },
+      inputSchema: { tender_text: z.string().max(maxTextInputChars).optional() },
     },
     async ({ tender_text }) => {
       const tender = await loadTender(tender_text);
@@ -811,9 +858,9 @@ export function createEpcTenderMcpServer() {
       title: 'Match Company Profile',
       description: 'Match extracted tender requirements against company capabilities and documents.',
       inputSchema: {
-        tender_text: z.string().optional(),
-        company_profile_json: z.string().optional(),
-        company_profile_text: z.string().optional(),
+        tender_text: z.string().max(maxTextInputChars).optional(),
+        company_profile_json: z.string().max(maxTextInputChars).optional(),
+        company_profile_text: z.string().max(maxTextInputChars).optional(),
       },
     },
     async ({ tender_text, company_profile_json, company_profile_text }) => {
@@ -830,9 +877,9 @@ export function createEpcTenderMcpServer() {
       title: 'Generate Compliance Matrix',
       description: 'Generate requirement-by-requirement compliance matrix with evidence, risk, and action.',
       inputSchema: {
-        tender_text: z.string().optional(),
-        company_profile_json: z.string().optional(),
-        company_profile_text: z.string().optional(),
+        tender_text: z.string().max(maxTextInputChars).optional(),
+        company_profile_json: z.string().max(maxTextInputChars).optional(),
+        company_profile_text: z.string().max(maxTextInputChars).optional(),
       },
     },
     async ({ tender_text, company_profile_json, company_profile_text }) => {
@@ -854,9 +901,9 @@ export function createEpcTenderMcpServer() {
       title: 'Generate Bid/No-Bid Memo',
       description: 'Generate advisory bid/no-bid memo from tender requirements and company profile.',
       inputSchema: {
-        tender_text: z.string().optional(),
-        company_profile_json: z.string().optional(),
-        company_profile_text: z.string().optional(),
+        tender_text: z.string().max(maxTextInputChars).optional(),
+        company_profile_json: z.string().max(maxTextInputChars).optional(),
+        company_profile_text: z.string().max(maxTextInputChars).optional(),
       },
     },
     async ({ tender_text, company_profile_json, company_profile_text }) => {
@@ -876,7 +923,7 @@ export function createEpcTenderMcpServer() {
       title: 'Search Historical Proposals',
       description: 'Search local historical proposal examples. Replace the JSON source with your own indexed archive for production.',
       inputSchema: {
-        query: z.string(),
+        query: z.string().min(2).max(500),
         limit: z.number().int().min(1).max(10).default(5),
       },
     },

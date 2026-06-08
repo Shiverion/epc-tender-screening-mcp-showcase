@@ -1,5 +1,5 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
-import { DEMO_ACCESS_TOKEN, PUBLIC_BASE_URL } from '@/lib/oauth-shim';
+import { ALLOW_DEMO_AUTH, DEMO_ACCESS_TOKEN, PUBLIC_BASE_URL } from '@/lib/oauth-shim';
 import { createEpcTenderMcpServer } from '@/mcp/server';
 
 export const dynamic = 'force-dynamic';
@@ -15,8 +15,12 @@ const corsHeaders = {
 
 function isAuthorized(req: Request): boolean {
   if (process.env.MCP_REQUIRE_AUTH === 'false') return true;
-  const expected = process.env.MCP_API_KEY ?? DEMO_ACCESS_TOKEN;
-  return req.headers.get('authorization') === `Bearer ${expected}` || req.headers.get('authorization') === `Bearer ${DEMO_ACCESS_TOKEN}`;
+  const authHeader = req.headers.get('authorization');
+  const expected = process.env.MCP_API_KEY;
+  return Boolean(
+    (expected && authHeader === `Bearer ${expected}`) ||
+      (ALLOW_DEMO_AUTH && authHeader === `Bearer ${DEMO_ACCESS_TOKEN}`)
+  );
 }
 
 async function handleMcpRequest(req: Request) {

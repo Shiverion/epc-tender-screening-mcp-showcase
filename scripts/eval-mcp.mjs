@@ -55,6 +55,21 @@ try {
   assert(search.count === 0, 'search_public_tenders should not crawl without source URLs');
   assert(String(search.note).includes('No public tender sources'), 'search_public_tenders should explain missing sources');
 
+  const blockedSourceResult = await client.callTool({
+    name: 'search_public_tenders',
+    arguments: {
+      query: 'internal metadata',
+      source_urls: ['http://localhost:3000/secret', 'http://127.0.0.1:3000/secret'],
+      limit: 5,
+    },
+  });
+  const blockedSource = JSON.parse(textOf(blockedSourceResult));
+  assert(blockedSource.count === 0, 'blocked local source URLs should return no results');
+  assert(
+    JSON.stringify(blockedSource.warnings).includes('Invalid or blocked URL'),
+    'blocked local source URLs should produce an explicit warning'
+  );
+
   const results = [];
   for (const testCase of cases) {
     const companyProfileText = await readFile(resolve(root, testCase.companyProfilePath), 'utf8');

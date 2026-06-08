@@ -1,5 +1,10 @@
 export const PUBLIC_BASE_URL = process.env.MCP_PUBLIC_BASE_URL ?? 'http://localhost:3000';
 export const DEMO_ACCESS_TOKEN = process.env.MCP_DEMO_ACCESS_TOKEN ?? 'epc-tender-demo-token';
+export const ALLOW_DEMO_AUTH = process.env.MCP_ALLOW_DEMO_AUTH === 'true' || process.env.NODE_ENV !== 'production';
+
+export function getIssuedAccessToken(): string | null {
+  return process.env.MCP_API_KEY ?? (ALLOW_DEMO_AUTH ? DEMO_ACCESS_TOKEN : null);
+}
 
 export const oauthCorsHeaders = {
   'Access-Control-Allow-Origin': '*',
