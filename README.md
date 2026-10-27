@@ -34,6 +34,60 @@ Tender teams spend significant time reading long procurement documents, checking
 | `generate_bid_no_bid_memo` | Generate advisory fit/risk scores and recommendation |
 | `search_historical_proposals` | Search local historical proposal examples |
 
+## System Design
+
+### Requirements
+
+**Functional**
+- Expose requirement extraction, company matching, compliance matrices, advisory bid/no-bid memos, and the end-to-end `screen_tender` workflow to MCP clients.
+- Support local stdio clients and remote Streamable HTTP connectors.
+
+**Non-functional**
+- Attach an evidence trace to compliance rows and keep fixture-based evals deterministic.
+- Restrict discovery to configured public tender URLs and require human review of recommendations.
+
+### High-Level Architecture
+
+```text
+MCP client → stdio transport ─┐
+            HTTP /api/mcp ────┴→ MCP server
+                                  ├→ connected tender/profile text
+                                  ├→ allowlisted public sources
+                                  ├→ local JSON proposal examples
+                                  └→ screen_tender → matrix + advisory memo
+OAuth-compatible connector routes: /oauth/* and /.well-known/*
+```
+
+The source currently registers **11 MCP tools**, including `screen_tender`. Connector routes provide OAuth-compatible metadata and demo flows; production deployments should configure real authorization.
+
+### Data Model / API Contract
+
+| Interface | Contract |
+| --- | --- |
+| MCP tools | Text/JSON inputs and structured screening results from `src/mcp/server.ts` |
+| HTTP transport | Streamable MCP at `/api/mcp` |
+| Local transport | `npm run mcp:stdio` |
+| Local context | Example and local JSON/Markdown files under `data/` |
+
+### Scale and Reliability
+
+- Public tender search fetches configured sources, blocks common private-host forms, applies a 12-second timeout, and caps response text at 1 MB.
+- The workflow is synchronous and file-backed; no shared database or job queue is configured.
+- GitHub Actions runs install, lint, build, and deterministic MCP evals. The current workflow does not run `npm audit`.
+
+### Trade-offs
+
+| Decision | Benefit | Cost |
+| --- | --- | --- |
+| One MCP workflow orchestrates screening | Clients get one consistent end-to-end operation | A request depends on each parsing and source step completing |
+| File-backed showcase context | Easy to inspect and replace for a demo | Not shared across server instances |
+
+### What to Revisit as It Grows
+
+- Validate resolved IP addresses as well as host strings before fetching public sources.
+- Add `npm audit` to CI alongside lint, build, and evals.
+- Replace demo OAuth behavior with per-user authorization and shared storage.
+
 ## Quick Start
 
 ```bash
